@@ -230,7 +230,7 @@ class Villager(object):
         没有 embedding，用三条便宜的信号打分：
           * 新近性：越近越高（半衰期约 3 天）
           * 相关性：关系类 > 对话类 > 事件类 > 闲事
-          * 未说过：insight 用过的原文降权，避免反复念叨同一件事
+          * 个体差异：同一条公共事件，不同的人在意程度不一样
         这个打分是刻意做"笨"的 —— 它必须能在断网、没模型时也算得出来。
         """
         if not self.memories:
@@ -243,9 +243,12 @@ class Villager(object):
                 continue
             age = max(0.0, now - (d * 24.0 + h))
             recency = 0.5 ** (age / 72.0)          # 3 天半衰
-            # 用 vid+文本做一点确定性抖动：让不同的人对同一条公共事件
+            # 用 vid + 文本内容做确定性抖动：让不同的人对同一条公共事件
             # 的"在意程度"不一样，否则全镇检索结果永远一模一样。
-            wobble = 1.0 + 0.35 * ((self.vid * 37 + len(t)) % 7 - 3) / 3.0
+            # 必须按内容哈希而不是按长度 —— 按长度的话，
+            # 长度相同的两条记忆会得到同一个抖动，区分度就没了。
+            seed = self.vid * 37 + (sum(ord(c) for c in t) % 97)
+            wobble = 1.0 + 0.35 * ((seed % 7) - 3) / 3.0
             scored.append((recency * kind_w.get(k, 0.5) * wobble, d, h, t, k))
         scored.sort(key=lambda x: -x[0])
         return [(d, h, t) for _, d, h, t, _ in scored[:limit]]
@@ -253,8 +256,8 @@ class Villager(object):
     def reflect(self, day, hour):
         """把同类记忆压成一句自我认知。攒不够 3 条就先不反思。
 
-        优先从"私人"的 rel/talk 里提炼 —— 这些都是全镇广播的镇志，
-        拿它反思，十二个人会得出同一句 insight。
+        优先从"私人"的 rel/talk 里提炼。move/event 这类是全镇广播的镇志，
+        拿它反思，十二个人会得出同一句 insight —— 那就等于没有自我认知。
         """
         by_kind = {}
         for d, h, t, k in self.memories:

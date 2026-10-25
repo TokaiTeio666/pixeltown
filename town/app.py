@@ -13,6 +13,7 @@
 import ctypes
 import json
 import os
+import subprocess
 import sys
 import time
 import tkinter as tk
@@ -27,6 +28,7 @@ from .saves import SaveManager
 from .world import PW, PH
 
 KEY_HEX = "#%02X%02X%02X" % KEY
+_IS_WIN = sys.platform.startswith("win")
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(APP_DIR)
 SAVE_DIR = os.path.join(ROOT_DIR, "save")
@@ -172,7 +174,6 @@ class TownApp(object):
         # 小镇管理（列表 / 新建 / 切换 / 备份）—— 纯文件操作，不依赖 sim
         self.saves = SaveManager(SAVE_DIR)
         self.saves.ensure_dirs()
-        self.restart_please = None
 
         # ---- 接本地大模型 ----
         # 默认开：用户装了 Ollama 才装的这个功能。
@@ -451,12 +452,15 @@ class TownApp(object):
         if not slots:
             sub.add_command(label="（还没有小镇）", state="disabled")
         for s in slots:
-            label = "%s · 第%d天 · %d人 · %s" % (
-                s["name"], s["day"], s["pop"], s["season"])
+            # 当前存档的文件名是 town.json，不能直接当显示名用，
+            # 否则会冒出一个叫 "town" 的条目和别的镇并列，看不出哪个在玩
             if s.get("is_current"):
-                label = "✓ " + label
-            elif s["name"] == os.path.splitext(os.path.basename(self.save_path))[0]:
-                label = "● " + label
+                shown = s.get("source_name") or ("第%d天这座" % s["day"])
+                label = "✓ 正在玩：%s · 第%d天 · %d人 · %s" % (
+                    shown, s["day"], s["pop"], s["season"])
+            else:
+                label = "　%s · 第%d天 · %d人 · %s" % (
+                    s["name"], s["day"], s["pop"], s["season"])
             sub.add_command(
                 label=label,
                 command=lambda _n=s["name"], _cur=s.get("is_current"): self.use_town(_n, _cur))
@@ -477,7 +481,12 @@ class TownApp(object):
             self.sim.log("小镇备份好了：%s" % os.path.basename(p))
 
     def use_town(self, name, is_current=False):
-        """切换到另一座小镇。当前这座会先保存 + 备份，不会丢。"""
+        """切换到另一座小镇。当前这座会先保存 + 备份，不会丢。
+
+        切换必须重启进程：地块、人头、记忆全要从新档重建，
+        热替换的路径太多（渲染器缓存、村民引用、LLM 队列都在指着旧对象），
+        不值得为一个很少发生的操作去冒那个险。
+        """
         if is_current:
             return
         try:
@@ -486,9 +495,31 @@ class TownApp(object):
         except Exception as exc:
             log_error("切换小镇失败", exc)
             return
-        # 换存档最简单可靠的做法就是重启进程：
-        # 地块、人头、记忆全要从新档重建，热替换的路径太多，不值得。
-        self.restart_please = "已切换到「%s」，重启后生效" % name
+        # 真的重启：拉一个新进程再退出自己。
+        # 原来这里只设了个 restart_please 标志就 quit_app()，
+        # 而那个标志没有任何地方读 —— 结果是窗口直接消失、
+        # 小镇根本没换过来，用户只能自己再启动一次（还以为崩了）。
+        self.relaunch()
+
+    def relaunch(self):
+        """用同一个解释器 + 同样参数起一个新进程，然后退出自己。"""
+        started = False
+        try:
+            argv = [sys.executable, "-m", "town.app"]
+            kwargs = {"cwd": ROOT_DIR, "close_fds": True}
+            if _IS_WIN:
+                # pythonw 下不要弹控制台；DETACHED_PROCESS 让子进程脱离本进程存活
+                kwargs["creationflags"] = 0x00000008
+            subprocess.Popen(argv, **kwargs)
+            started = True
+        except Exception as exc:
+            log_error("重启失败", exc)
+        if not started:
+            # 起不来就别静默退出，留个记号在日志里让用户能看到
+            try:
+                self.sim.log("切换后自动重启失败，请手动重新打开小镇")
+            except Exception:
+                pass
         self.quit_app()
 
     def new_town(self):

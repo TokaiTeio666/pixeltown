@@ -1099,11 +1099,12 @@ class TownSim(object):
             "note": str(snap.get("note") or "")[:40],
         }
 
-    def _activity_reactions(self, dt_hours):
-        """机器在忙 → 镇上的工匠也在忙。这条是"陪着你上班"的全部意思。
+    def _activity_reactions(self):
+        """机器在忙 → 镇上的工匠也说一句。这条是"陪着你上班"的全部意思。
 
-        刻意做得很轻：只是让干活的场景多说两句、多冒点火花，
-        绝不改变作息表 —— 小镇的节奏不该被你的 CPU 占用率绑架。
+        刻意做得很轻：只在日志里多说两句话，外加给对方记一条记忆。
+        **不改变作息表、不改变移动速度** —— 小镇的节奏不该被你的
+        CPU 占用率绑架，机器再忙农民也不会半夜下地。
         """
         a = self.activity
         if not a.get("enabled"):
@@ -1148,7 +1149,7 @@ class TownSim(object):
             h[3] -= dt_real
         self.highlights = [h for h in self.highlights if h[3] > 0]
         # 真实电脑忙的时候，镇上的工匠也跟着忙（关掉就什么都不发生）
-        self._activity_reactions(dt_real * self.hours_per_second)
+        self._activity_reactions()
 
     # ==================================================================
     # 存档

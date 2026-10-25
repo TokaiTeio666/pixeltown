@@ -30,3 +30,8 @@ shots/*.png
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 临时文件
+_msg.txt
+_message*.txt
+*.bak

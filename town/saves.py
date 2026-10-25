@@ -86,12 +86,31 @@ class SaveManager(object):
         }
 
     def list_slots(self, include_current=True):
-        """列出所有可切换的小镇（当前存档 + towns/ 下的模板）。"""
+        """列出所有可切换的小镇（当前存档 + towns/ 下的模板）。
+
+        注意：当前存档的文件名永远是 town.json，直接拿文件名当显示名
+        会出现一个叫 "town" 的条目和「甲镇」「乙镇」并列，用户根本分不清
+        哪个是自己正在玩的那个。所以这里把当前项标记成 is_current，
+        并额外给出它来自哪个 towns/ 模板（source_name）。
+        """
         out = []
         if include_current and os.path.exists(self.current):
             s = self.summarize(self.current)
             if s:
                 s["is_current"] = True
+                s["source_name"] = None
+                # 当前存档是某个模板的副本 —— 按 seed + 天数找回它的名字
+                try:
+                    for nm in os.listdir(self.slots_dir):
+                        if not nm.endswith(".json"):
+                            continue
+                        t = self.summarize(os.path.join(self.slots_dir, nm))
+                        if (t and t["seed"] == s["seed"]
+                                and abs(t["day"] - s["day"]) <= 0):
+                            s["source_name"] = t["name"]
+                            break
+                except Exception:
+                    pass
                 out.append(s)
         try:
             names = sorted(os.listdir(self.slots_dir))

@@ -140,7 +140,7 @@ def test_activity():
         sim.advance(24 * 1 + 10.0, detailed=True)
         n0 = len(sim.log_lines)
         sim.set_activity({"enabled": True, "level": 1.0, "busy": True, "note": ""})
-        sim._activity_reactions(1.0)
+        sim._activity_reactions()
         said = sim.log_lines[-1][2] if len(sim.log_lines) > n0 else ""
         # 白天不一定有人正在 work，允许这一次没触发，但状态必须被接收
         check("外部活动状态被接收", sim.activity["busy"] is True)
@@ -151,14 +151,14 @@ def test_activity():
         sim.set_activity({"enabled": False})
         n1 = len(sim.log_lines)
         for _ in range(10):
-            sim._activity_reactions(1.0)
+            sim._activity_reactions()
         check("关掉之后完全静默", len(sim.log_lines) == n1)
 
         sim2 = TownSim(seed=20240607)
         sim2.advance(24 * 2 + 10.0, detailed=True)
         n2 = len(sim2.log_lines)
         for _ in range(20):
-            sim2._activity_reactions(1.0)
+            sim2._activity_reactions()
         check("默认不开启时没有任何影响", len(sim2.log_lines) == n2)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

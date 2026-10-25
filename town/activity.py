@@ -32,9 +32,16 @@ import time
 
 # 采样间隔（秒）。太密没意义，太疏反应慢。
 SAMPLE_INTERVAL = 2.0
-# 滞回：进入 busy 的门槛要比退出高，否则会在临界点上来回跳
-BUSY_ENTER = 55.0
-BUSY_EXIT = 25.0
+
+# 滞回：进入 busy 的门槛要比退出高，否则会在临界点上来回跳。
+#
+# 这两个值要按"真实负载"调，不能凭感觉定。原来定的 55/25：
+# level 是 CPU 百分比的直接映射，而现代多核机器日常波动就有 20~30%，
+# 跑一次编译也就 30~40% —— 稳态 25% 负载下 level 只收敛到 0.25，
+# 永远够不到 55，等于功能形同虚设（实测 20 次采样 busy 一直 False）。
+# 现在放到 40/18：正常办公不会误触发，编译/批量任务能稳定越过。
+BUSY_ENTER = 40.0
+BUSY_EXIT = 18.0
 
 _IS_WIN = platform.system() == "Windows"
 
@@ -70,25 +77,36 @@ class _WinCPU(object):
         return max(0.0, min(100.0, 100.0 * (total - d_idle) / float(total)))
 
 
-def _posix_cpu():
-    try:
-        with open("/proc/stat", "r") as fh:
-            parts = fh.readline().split()
-        vals = [int(x) for x in parts[1:]]
-        idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
-        total = sum(vals)
-        _posix_cpu._prev = getattr(_posix_cpu, "_prev", None)
-        prev = _posix_cpu._prev
-        _posix_cpu._prev = (idle, total)
-        if prev is None:
+class _PosixCPU(object):
+    """读 /proc/stat 做差分。非 Linux（如 macOS）没有这个文件，会稳定返回 0。
+
+    和 _WinCPU 保持同样的"有状态对象"形态：用函数属性存上一次的采样
+    在多实例下会互相污染（两个监视器共用一个 _prev），
+    所以各平台都用实例属性。
+    """
+
+    def __init__(self):
+        self._prev = None
+
+    def __call__(self):
+        try:
+            with open("/proc/stat", "r") as fh:
+                parts = fh.readline().split()
+            vals = [int(x) for x in parts[1:]]
+            idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+            total = sum(vals)
+            cur = (idle, total)
+            prev = self._prev
+            self._prev = cur
+            if prev is None:
+                return 0.0
+            d_idle = cur[0] - prev[0]
+            d_total = cur[1] - prev[1]
+            if d_total <= 0:
+                return 0.0
+            return max(0.0, min(100.0, 100.0 * (d_total - d_idle) / float(d_total)))
+        except Exception:
             return 0.0
-        d_idle = idle - prev[0]
-        d_total = total - prev[1]
-        if d_total <= 0:
-            return 0.0
-        return max(0.0, min(100.0, 100.0 * (d_total - d_idle) / float(d_total)))
-    except Exception:
-        return 0.0
 
 
 class ActivityMonitor(object):
@@ -105,7 +123,7 @@ class ActivityMonitor(object):
         self.level = 0.0
         self.busy = False
         self.note = ""              # activity.txt 里那行字，原样保留
-        self._cpu = _WinCPU() if _IS_WIN else _posix_cpu
+        self._cpu = _WinCPU() if _IS_WIN else _PosixCPU()
         self._thread = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
@@ -178,11 +196,7 @@ class ActivityMonitor(object):
 
     # ---------------- 给主循环 ----------------
     def snapshot(self):
+        """给 sim 用的一帧。字段要少而明确 —— sim 只关心"忙不忙"和"在忙什么"。"""
         with self._lock:
             return {"enabled": self.enabled, "level": round(self.level, 3),
                     "busy": self.busy, "note": self.note}
-
-    def work_bonus(self):
-        """工匠的"加班程度" 0..1。用来调工作时的动作频率 / 台词倾向。"""
-        with self._lock:
-            return max(0.0, min(1.0, (self.level - 0.25) / 0.6))

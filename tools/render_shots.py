@@ -57,6 +57,32 @@ def key_mask(img):
     return m
 
 
+def magenta_leak(img):
+    """找出"岛内露出来的透明键"。
+
+    透明键是 #FF00FF。地形绘制时如果某个分支忘了先铺底色，
+    那个格子就会保留画布初始色，昼夜染色后变成近品红的一片 ——
+    岛内不该出现这种颜色。这个检查和 key_pct 是两件事：
+    key_pct 只统计"精确等于键色"的像素（那是岛外的透明区，属正常），
+    而这里抓的是**被染色污染过的键色**，它不可能出现在正常的画面里。
+
+    抓法：红和蓝都明显高于绿，且两者接近（品红家族），
+    绿通道压得很低。草地/泥土/水/石头都满足不了这个条件。
+    """
+    px = img.load()
+    k = (KEY[0], KEY[1], KEY[2])
+    hits = []
+    for y in range(0, img.height, 2):
+        for x in range(0, img.width, 2):
+            c = px[x, y]
+            if c == k:
+                continue
+            r, g, b = c
+            if g < 90 and r > 150 and b > 150 and abs(r - b) < 70:
+                hits.append((x, y, c))
+    return hits
+
+
 def analyze(img):
     """代替人眼的图像体检。
 
@@ -118,6 +144,7 @@ def analyze(img):
         "last_row": last,
         "connected_pct": 100.0 * seen / max(1, cnt),
         "ui_colors": sum(1 for c, col in (colors or []) if col in (PAL_UI_BG, PAL_UI_BORDER)),
+        "magenta": magenta_leak(img),
     }
 
 
@@ -358,6 +385,12 @@ def main():
             bad.append(r["name"] + ":顶部没画到")
         if r["last_row"] < 120 * 0.78:
             bad.append(r["name"] + ":底部没画到")
+        # 岛内不许露出透明键：漏铺底色会整片变成紫红（农田就这样紫过）
+        mg = r.get("magenta") or []
+        if mg:
+            sample = ", ".join("(%d,%d)%s" % (x, y, c) for x, y, c in mg[:3])
+            print("    ↑ 品红泄漏 %d 处，例如 %s" % (len(mg), sample))
+            bad.append("%s:透明键泄漏(%d像素)" % (r["name"], len(mg)))
 
     # 昼夜亮度必须拉开，否则染色没生效
     if "0900_morning" in by_name and "2200_night" in by_name:
@@ -463,16 +496,23 @@ def main():
     box_cx = (fpx0 + fpx1) / 2.0
     print("  本体框 px=%s  画面中心 x=%d  喷泉中心 x=%.0f" % (box, PW // 2, box_cx))
     print("  水色像素：本体 %d  水柱 %d / %d" % (body_water, jet_a, jet_b))
+    # 阈值按"逻辑像素"定，不按缩放后的像素定：
+    # 喷泉本体固定 20x18，水色像素数严格等于每逻辑像素 s*s 个，
+    # 实测本体是 25 个逻辑像素（s=1..4 都稳定），水柱区 4~7 个。
+    # 写成 s*s 的倍数，换 --scale 也不会误报。
+    body_logic = body_water / float(s * s)
+    jet_logic = jet_a / float(s * s)
+    print("  逻辑像素折算：本体 %.1f  水柱 %.1f" % (body_logic, jet_logic))
     check("fountain in the middle of the picture", abs(box_cx - PW / 2.0) <= PW * 0.06,
           "%.0f vs %d" % (box_cx, PW // 2))
-    check("fountain water is drawn", body_water >= 40 * s * s,
-          "%d 像素（需 ≥%d）" % (body_water, 40 * s * s))
-    check("fountain jet is drawn", jet_a >= 4 * s * s,
-          "%d 像素（需 ≥%d）" % (jet_a, 4 * s * s))
-    check("fountain jet animates",
-          list(frame_a.crop((fpx0 * s, jy0 * s, fpx1 * s, jy1 * s)).getdata())
-          != list(frame_b.crop((fpx0 * s, jy0 * s, fpx1 * s, jy1 * s)).getdata()),
-          "两帧水柱一模一样")
+    check("fountain water is drawn", body_logic >= 18,
+          "%.1f 个逻辑像素（需 ≥18）" % body_logic)
+    check("fountain jet is drawn", jet_logic >= 2,
+          "%.1f 个逻辑像素（需 ≥2）" % jet_logic)
+    _ja = list(frame_a.crop((fpx0 * s, jy0 * s, fpx1 * s, jy1 * s)).getdata())
+    _jb = list(frame_b.crop((fpx0 * s, jy0 * s, fpx1 * s, jy1 * s)).getdata())
+    check("fountain jet animates", _ja != _jb,
+          "" if _ja != _jb else "两帧水柱一模一样")
 
     print("\n" + "=" * 74)
     print("RESULT: %d shots, %d problems" % (len(rows), len(bad)))

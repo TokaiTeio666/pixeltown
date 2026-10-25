@@ -174,11 +174,27 @@ class Renderer(object):
                     if season == 3:
                         d.rectangle([x0 + 3, y0 + 3, x0 + 6, y0 + 6], fill=PAL["snow_dark"])
                 elif kind == "farm":
+                    # 先铺底色！这里原来漏了这一步，farm 格子就保留着
+                    # 画布初始色 KEY(#FF00FF)，昼夜染色后变成一片紫红 ——
+                    # 透明键只在最后按岛屿剪影裁切，农田在岛内，裁不掉，
+                    # 于是整片田都是紫的。别的分支（path/plaza/sand）都铺了底色。
+                    d.rectangle([x0, y0, x0 + TILE - 1, y0 + TILE - 1],
+                                fill=PAL["farm"])
                     # 犁沟
                     for k in range(0, TILE, 3):
                         d.line([x0, y0 + k, x0 + TILE - 1, y0 + k], fill=PAL["farm_wet"])
                     if season == 3:
                         d.rectangle([x0, y0, x0 + TILE - 1, y0 + 1], fill=PAL["snow_dark"])
+                elif kind == "pier":
+                    # 栈桥：横向木板，比草地暗一档，才看得出是木头不是草。
+                    # 原来没有这个分支，pier 会落到 else 画成草地，
+                    # 于是码头看上去就是一片绿。
+                    d.rectangle([x0, y0, x0 + TILE - 1, y0 + TILE - 1],
+                                fill=PAL["trunk"])
+                    for k in range(1, TILE, 3):
+                        d.line([x0, y0 + k, x0 + TILE - 1, y0 + k],
+                               fill=PAL["trunk_dark"])
+                    d.line([x0, y0, x0 + TILE - 1, y0], fill=PAL["wall_wood"])
                 else:
                     d.rectangle([x0, y0, x0 + TILE - 1, y0 + TILE - 1], fill=grass)
 

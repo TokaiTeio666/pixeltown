@@ -440,6 +440,7 @@ python tools/taste_test.py --style scramble   # 只看某一种
 PY="C:/Users/admin/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/python/python.exe"
 
 & $PY tools/validate_art.py        # 像素素材：轮廓、尺寸、透明键安全、喷泉   (133 项)
+& $PY tools/validate_terrain.py    # 地形配色：主色符合 + 不许品红泄漏     (23 项)
 & $PY tools/validate_world.py      # 世界生成：ASCII 地图 + 布局/连通性/喷泉  (21 项)
 & $PY tools/validate_sim.py 16     # 模拟器：跑 16 个游戏日，存档/离线补算   (14 项)
 & $PY tools/validate_interaction.py  # 真实 GUI：点击/拖拽/缩放/穿透/停止     (60 项)
@@ -515,6 +516,21 @@ PY="C:/Users/admin/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/python/pyt
   只有真正调 GUI 的 `validate_interaction.py` 才会报
   `'TownApp' object has no attribute 'toggle_pause'`。
   所以：**改完 `app.py` 一定要跑一遍真实 GUI 自检**，它专门抓这类"静默的断手"。
+- **画布初始色是透明键，漏铺底色就变成紫色**。`terrain()` 用 `#FF00FF` 起画布
+  （因为岛外要透明），每个地形分支都必须先 `d.rectangle(...)` 把自己的底色铺满。
+  `farm` 分支当初只画了犁沟、没铺底色，于是整片农田保留着透明键 ——
+  昼夜染色把 `#FF00FF` 推成 `RGB(255,7,254)`，看上去就是**一片紫**。
+  致命之处在于：**它不报错、不崩溃、所有结构自检全都绿灯**，
+  `key_pct` 那条也查不出来（它只统计岛外精确等于键色的像素）。
+  现在有两条防线：
+  - `validate_terrain.py`：每种地形的主色必须"像它自己"，且**任何地形都不许出现品红家族**
+  - `render_shots.py` 的品红泄漏检查：逐张图扫，一旦漏底色，29 张图会同时报错
+
+  同理，`pier`（码头）也漏了分支，落到 `else` 被画成草地 ——
+  码头看上去是一片绿。一并补上了。
+- **断言要按"逻辑像素"定阈值，不能按缩放后的像素**。喷泉水色像素严格等于
+  `25 × scale²`，最初写成 `40 × scale²` 在 scale=3 下碰巧过了，
+  换成 scale=2 立刻失败 —— 阈值错了，只是被某个缩放掩盖了。
 
 ---
 

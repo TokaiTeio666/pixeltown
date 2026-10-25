@@ -1,0 +1,32 @@
+# ---- 运行时状态：不属于源码 ----
+save/town.json
+save/towns/
+save/backups/
+save/trash/
+save/activity.txt
+save/app.pid
+save/stop.flag
+save/error.log
+save/settings.json
+save/_memtest.json
+
+# 自检报告（用了 --out 时才会产生）
+reports/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+
+# 离线出图是可再生的，不进仓库（需要时跑 tools/render_shots.py）
+shots/*.png
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

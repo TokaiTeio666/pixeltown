@@ -1,0 +1,23 @@
+# 换行与编码必须钉死 —— 这个项目对此有硬要求（见 README「刻意踩过的坑」）
+
+# 批处理必须是 CRLF：LF-only 时 `goto 标签` 会解析失败
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# .vbs 必须是 UTF-16LE + BOM，git 不要碰它的换行
+*.vbs   -text
+
+# Python / 文档统一用 LF，避免跨平台每行都进 diff
+*.py    text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+
+# 二进制
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.JPG   binary
+*.GIF   binary

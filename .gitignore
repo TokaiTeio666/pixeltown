@@ -31,7 +31,11 @@ shots/*.png
 Thumbs.db
 desktop.ini
 
-# 临时文件
-_msg.txt
-_message*.txt
+# 临时文件 / 提交信息草稿
+# 用下划线开头的一律忽略：这类文件都是"过程中"用的，
+# 之前 _msg.txt 和 _tmpmsg.txt 都被 git add -A 误提交过两次。
+_*
+!__init__.py
+!__pycache__/
 *.bak
+*.tmp
